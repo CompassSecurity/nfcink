@@ -53,6 +53,7 @@ Commands:
 | `write <image>` | Quantise, dither and write an image, then refresh |
 | `badge <photo> --name "Jane Doe"` | Compose and write a name badge |
 | `refresh` | Trigger a screen refresh without rewriting image data |
+| `clear` | Write a blank white screen |
 
 Options:
 - `--bw` (write / badge) — force 2-colour palette (black + white only)

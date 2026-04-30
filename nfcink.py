@@ -10,6 +10,7 @@ Usage:
     python nfcink.py write <image.png>
     python nfcink.py badge <photo.jpg> --name "Jane Doe" [--company "Acme" | --logo logo.png]
     python nfcink.py refresh
+    python nfcink.py clear
     python nfcink.py write <image.png> -v
 """
 
@@ -112,6 +113,7 @@ def main() -> None:
                          help="Force black+white only (2-colour waveform)")
 
     sub.add_parser("refresh", help="Trigger a screen refresh")
+    sub.add_parser("clear",   help="Write a blank white screen")
 
     args = parser.parse_args()
 

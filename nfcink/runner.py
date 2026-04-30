@@ -32,11 +32,12 @@ from typing import TypedDict
 from .constants import (
     SW_OK, SW_COLOR_SCREEN, SW_6986, SW_698A, SW_68CA,
     APDU_REFRESH_INIT, APDU_REFRESH_ALT, APDU_POLL_REFRESH,
+    SCREEN_WIDTH, SCREEN_HEIGHT,
     hex_str, vlog,
 )
 from .protocol import NfcInkDevice, strip_sw
 from .transport import TagDropError
-from .image import image_to_device_bytes
+from .image import image_to_device_bytes, quantise_image, pixels_to_bytes
 from .compose import compose_badge
 
 
@@ -264,6 +265,17 @@ def run_on_tag(transport, args, state: _State) -> bool:
 
     if args.command == "refresh":
         device.read_config()
+        return start_refresh(device, state)
+
+    if args.command == "clear":
+        from PIL import Image
+        cfg        = device.read_config()
+        white      = Image.new("RGB", (SCREEN_WIDTH, SCREEN_HEIGHT), (255, 255, 255))
+        pixels     = quantise_image(white, cfg)
+        image_data = pixels_to_bytes(pixels, cfg)
+        if not device.write_image_d3(image_data):
+            state['result'] = False
+            return True
         return start_refresh(device, state)
 
     return True
