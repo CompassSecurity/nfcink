@@ -59,17 +59,6 @@ Options:
 - `--reader N` — PC/SC reader index (default: 0; PICC interface auto-preferred)
 - `-v` — verbose APDU logging
 
-## No reader? Alternative app
-
-If you don't have a compatible NFC reader, the vendor's own Android app can
-write to the badge directly from a phone:
-[NetMePro](http://www.netmepro.com/app.html).
-
-> **Use at your own risk.** This is a closed-source third-party application.
-> Review its permissions before installing and do not use it with sensitive data.
-
----
-
 ## NFC reader
 
 Uses [pyscard](https://pyscard.sourceforge.io/) to talk to any CCID-compliant
@@ -88,54 +77,41 @@ The **ACS ACR1552U** has been tested and works well.
 > that cannot be overridden in software, causing the session to drop before
 > the device responds.  Use a CCID reader with pyscard instead.
 
-### Reader setup (Windows)
+### Reader setup
 
-The ACS CCID driver must be installed so that the reader's **contactless
-(PICC) interface** is visible to PC/SC. The generic Windows CCID driver only
-exposes the SAM slot.
+#### Windows (if needed)
 
-1. Download and install the ACS CCID driver from
-   [acs.com.hk](https://www.acs.com.hk/en/driver/3/acr1552-usb-type-c-nfc-reader/).
-2. Unplug and re-plug the reader.
-3. Verify the PICC interface appears:
+The generic Windows CCID driver only exposes the SAM slot. If the PICC
+interface does not appear (see verification below), install the ACS CCID
+driver from [acs.com.hk](https://www.acs.com.hk/en/driver/3/acr1552-usb-type-c-nfc-reader/),
+then unplug and re-plug the reader.
 
-   ```
-   python -c "from smartcard.System import readers; print(list(readers()))"
-   # Should show: ACS ACR1552 1S CL Reader PICC 0
-   ```
-
-### Reader setup (Linux)
-
-Install the PC/SC daemon and pyscard dependencies:
+#### Linux
 
 ```bash
 sudo apt install pcscd libpcsclite-dev swig
 sudo systemctl enable --now pcscd
 ```
 
-The kernel's built-in NFC driver may claim the reader. Unload it first:
+#### Verify
+
+Re-plug the reader, then run:
 
 ```bash
-sudo modprobe -r nfc_acr122_usb pn533_usb pn533 nfc
+python -c "from smartcard.System import readers; print(list(readers()))"
+# Should show: ACS ACR1552 1S CL Reader PICC 0
 ```
 
-To make this permanent:
+## No reader? Alternative app
 
-```bash
-echo -e "blacklist nfc_acr122_usb\nblacklist pn533_usb\nblacklist pn533\nblacklist nfc" \
-  | sudo tee /etc/modprobe.d/blacklist-nfc.conf
-sudo update-initramfs -u   # Debian / Ubuntu
-```
+If you don't have a compatible NFC reader, the vendor's own Android app can
+write to the badge directly from a phone:
+[NetMePro](http://www.netmepro.com/app.html).
 
-Add a udev rule so the script can access the reader without `sudo`:
+> **Use at your own risk.** This is a closed-source third-party application.
+> Review its permissions before installing and do not use it with sensitive data.
 
-```bash
-echo 'SUBSYSTEM=="usb", ATTRS{idVendor}=="072f", GROUP="plugdev", MODE="0660"' \
-  | sudo tee /etc/udev/rules.d/99-acs-nfc.rules
-sudo udevadm control --reload-rules && sudo udevadm trigger
-```
-
-Re-plug the reader after these steps.
+---
 
 ## Protocol notes
 
