@@ -1,0 +1,8 @@
+# Core runtime dependencies for the nfcink package and nfcink.py CLI.
+
+Pillow>=10.0           # image quantisation, dithering, badge composition
+minilzo>=1.2           # LZO1x-1 compression for D3 image writes (batch-2 hardware)
+
+# NFC backends.
+
+pyscard>=2.0           # PC/SC via OS smart-card stack
