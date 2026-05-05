@@ -1,6 +1,6 @@
 # nfcink
 
-Reverse-engineered driver for a 4-colour e-ink NFC display badge
+Vibe-coded, reverse-engineered driver for a 4-colour e-ink NFC display badge
 (240 × 416 px, black / white / red / yellow). The CLI reads the device
 configuration, writes images, composes name/photo badges, and triggers the
 e-ink refresh.
