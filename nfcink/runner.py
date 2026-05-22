@@ -316,6 +316,61 @@ def run_on_tag(transport, args, state: _State) -> bool:
             state['result'] = True
         return True
 
+    if args.command == "write-user-data":
+        try:
+            data_bytes = bytes.fromhex(args.data)
+        except ValueError as exc:
+            print(f"[!] --data must be a hex string: {exc}")
+            state['result'] = False
+            return True
+        if len(data_bytes) < 1:
+            print("[!] --data must contain at least 1 byte")
+            state['result'] = False
+            return True
+
+        cfg     = device.read_config()
+        max_len = cfg.user_data * 1024
+        if args.offset + len(data_bytes) > max_len:
+            allowed = max_len - args.offset
+            print(f"[!] Writing {len(data_bytes)} bytes from offset 0x{args.offset:X} "
+                  f"would overflow the {cfg.user_data} KB user data area "
+                  f"(max {allowed} bytes from this offset)")
+            state['result'] = False
+            return True
+
+        if args.offset < 14 and not args.force:
+            print(f"[!] Refusing to write to offset 0x{args.offset:X}: the first "
+                  f"14 bytes hold the '4_color Screen' marker that the config "
+                  f"parser relies on. Pick offset >= 14 (0x0E), or pass --force "
+                  f"to override.")
+            state['result'] = False
+            return True
+        if args.offset < 14 and args.force:
+            print(f"[!] --force: overwriting the '4_color Screen' marker region "
+                  f"(offset 0x{args.offset:X}..0x{args.offset + len(data_bytes) - 1:X}). "
+                  f"Subsequent `read` will probably fail to detect 4-color mode.")
+
+        # Chunk into <=250-byte APDUs.
+        cur_offset = args.offset
+        remaining  = len(data_bytes)
+        written    = 0
+        while remaining > 0:
+            chunk_len = min(remaining, 250)
+            chunk     = data_bytes[written:written + chunk_len]
+            resp = device.cmd_write_user_data(cur_offset, chunk)
+            sw   = resp[-2:] if len(resp) >= 2 else b""
+            if sw != SW_OK:
+                print(f"[!] Write failed at offset 0x{cur_offset:08X}  SW={hex_str(sw)}")
+                print(f"    {written} bytes written before failure.")
+                state['result'] = False
+                return True
+            cur_offset += chunk_len
+            written    += chunk_len
+            remaining  -= chunk_len
+        print(f"[+] Wrote {written} bytes to offset 0x{args.offset:08X}.")
+        state['result'] = True
+        return True
+
     if args.command == "write":
         cfg = device.read_config()
         if not 0 <= args.section < cfg.picture_capacity:

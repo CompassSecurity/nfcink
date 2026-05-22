@@ -92,7 +92,7 @@ def main() -> None:
     # can access them without hasattr guards.
     parser.set_defaults(image=None, section=0, photo=None, name=None,
                         company=None, logo=None, barcode=None, bw=False,
-                        compression="lzo")
+                        compression="lzo", force=False)
 
     sub.add_parser("read", help="Read and display device configuration")
     sub.add_parser("current-slot", help="Print the index of the image slot currently shown on the screen")
@@ -101,6 +101,14 @@ def main() -> None:
                        help="Byte offset within the user data area (default 0; accepts 0x... hex or decimal)")
     p_rud.add_argument("--length", type=lambda s: int(s, 0), default=16,
                        help="Number of bytes to read (default 16; chunked into 255-byte APDUs)")
+
+    p_wud = sub.add_parser("write-user-data", help="WRITE N bytes to the user data area (destructive)")
+    p_wud.add_argument("--offset", type=lambda s: int(s, 0), required=True,
+                       help="Byte offset within the user data area (avoid 0..13 -- the 4_color marker lives there)")
+    p_wud.add_argument("--data",   required=True,
+                       help="Hex string of bytes to write (e.g. 'DEADBEEF'; chunked into 250-byte APDUs)")
+    p_wud.add_argument("--force", action="store_true",
+                       help="Allow writing to offset 0..13 (overwrites the 4_color marker -- only do this if you know what you're doing)")
 
     p_write = sub.add_parser("write", help="Write an image to the display")
     p_write.add_argument("image", help="Path to image file (PNG/JPEG/...)")

@@ -107,6 +107,26 @@ class NfcInkDevice:
         )
         return self._txb(apdu)
 
+    def cmd_write_user_data(self, offset: int, data: bytes) -> bytes:
+        """F0 D7 00 00 <Lc> <offset BE 4B> <data...> -- write user data area.
+
+        Counterpart of `cmd_read_user_data`. Writes `data` (1..250 bytes per
+        APDU; caller chunks longer payloads) starting at byte `offset` in
+        the 20 KB user data area. Per FMSC ESL manual section 7.13.
+
+        WARNING: overwriting offset 0..13 destroys the "4_color Screen"
+        marker that `cmd_get_device_config` reads to enable the 4-color
+        override in DeviceCfg. Don't touch the first 14 bytes unless you
+        know you want to.
+        """
+        if not 0 <= offset <= 0xFFFFFFFF:
+            raise ValueError(f"offset out of 32-bit range: {offset}")
+        if not 1 <= len(data) <= 250:
+            raise ValueError(f"data length must be 1..250 per APDU, got {len(data)}")
+        payload = offset.to_bytes(4, "big") + data
+        apdu    = bytes([0xF0, 0xD7, 0x00, 0x00, len(payload)]) + payload
+        return self._txb(apdu)
+
     def cmd_get_device_config(self, timeout: float | None = None) -> bytes:
         """F0 D8 00 00 05 00 00 00 00 0E -- extended device / PIN status check."""
         return self._tx(APDU_DEVICE_CHECK, timeout=timeout)

@@ -52,6 +52,7 @@ Commands:
 | `read` | Print the parsed device configuration |
 | `current-slot` | Print the index of the image slot currently shown |
 | `read-user-data` | Read N bytes from the chip's 20 KB user data area |
+| `write-user-data` | Write N bytes to the user data area (destructive) |
 | `write <image>` | Quantise, dither and write an image, then refresh |
 | `badge <photo> --name "Jane Doe"` | Compose and write a name badge |
 | `refresh` | Trigger a screen refresh without rewriting image data |
@@ -126,5 +127,13 @@ write to the badge directly from a phone:
   is computed); then poll once with `F0DE000001`. Any of `9000`, `009000`
   or `019000` counts as success — the device completes the waveform
   autonomously after the NFC session ends.
+- **Restore the `4_color Screen` marker** if `write-user-data --force`
+  overwrote offset 0..13. The marker is a 14-byte ASCII string that the
+  config parser reads to enable 4-color mode; without it `write` will
+  produce wrong byte encodings:
+  ```bash
+  python nfcink.py write-user-data --offset 0 --force \
+    --data 345F636F6C6F722053637265656E
+  ```
 
 See `nfcink/runner.py` and `nfcink/protocol.py` for the full state machine.
