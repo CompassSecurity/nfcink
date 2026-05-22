@@ -250,6 +250,18 @@ def run_on_tag(transport, args, state: _State) -> bool:
         state["result"] = True
         return True
 
+    if args.command == "current-slot":
+        resp = device.cmd_get_image_sn()
+        sw = resp[-2:] if len(resp) >= 2 else b""
+        data = resp[:-2]
+        if sw == SW_OK and len(data) >= 1:
+            print(f"[+] Currently displayed slot: {data[0]}")
+            state["result"] = True
+        else:
+            print(f"[!] Unexpected response  SW={hex_str(sw)}  data={hex_str(data)}")
+            state["result"] = False
+        return True
+
     if args.command == "write":
         cfg = device.read_config()
         if not 0 <= args.section < cfg.picture_capacity:

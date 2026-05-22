@@ -50,6 +50,7 @@ Commands:
 | Command | Description |
 |---------|-------------|
 | `read` | Print the parsed device configuration |
+| `current-slot` | Print the index of the image slot currently shown |
 | `write <image>` | Quantise, dither and write an image, then refresh |
 | `badge <photo> --name "Jane Doe"` | Compose and write a name badge |
 | `refresh` | Trigger a screen refresh without rewriting image data |

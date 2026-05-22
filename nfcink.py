@@ -94,6 +94,7 @@ def main() -> None:
                         company=None, logo=None, barcode=None, bw=False)
 
     sub.add_parser("read", help="Read and display device configuration")
+    sub.add_parser("current-slot", help="Print the index of the image slot currently shown on the screen")
 
     p_write = sub.add_parser("write", help="Write an image to the display")
     p_write.add_argument("image", help="Path to image file (PNG/JPEG/...)")

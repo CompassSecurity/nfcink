@@ -38,6 +38,7 @@ PALETTE: dict[int, tuple[int, int, int]] = {
 
 APDU_READ_CONFIG     = "00D1000000"            # read device config TLV
 APDU_READ_IMAGE_INFO = "00EB000002"            # read 2-byte image flip flags
+APDU_GET_IMAGE_SN    = "00D5000000"            # read currently-displayed image slot index
 APDU_DEVICE_CHECK    = "F0D8000005000000000E"  # device / PIN status check
 APDU_REFRESH_INIT    = "F0D4050000"            # initial refresh (P1=0x05)
 APDU_REFRESH_ALT     = "F0D4850000"            # alternate refresh (P1=0x85)

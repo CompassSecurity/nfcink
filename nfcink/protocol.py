@@ -11,7 +11,8 @@ import minilzo
 
 from .constants import (
     SW_OK, SW_6986,
-    APDU_READ_CONFIG, APDU_READ_IMAGE_INFO, APDU_DEVICE_CHECK,
+    APDU_READ_CONFIG, APDU_READ_IMAGE_INFO, APDU_GET_IMAGE_SN,
+    APDU_DEVICE_CHECK,
     APDU_REFRESH_INIT, APDU_REFRESH_ALT, APDU_POLL_REFRESH,
     APDU_DRIVER_CLEAR, APDU_DRIVER_FLOW_FACTORY, APDU_SET_SCREEN_FACTORY,
     vlog, hex_str,
@@ -75,6 +76,14 @@ class NfcInkDevice:
     def cmd_read_image_info(self) -> bytes:
         """00 EB 00 00 02 -- read 2-byte image flip flags."""
         return self._tx(APDU_READ_IMAGE_INFO)
+
+    def cmd_get_image_sn(self) -> bytes:
+        """00 D5 00 00 00 -- return index of the currently displayed image slot.
+
+        Response: 1 data byte = slot index (0..pictureCapacity-1), then SW=9000.
+        Documented in FMSC ESL User Development Manual section 7.8.
+        """
+        return self._tx(APDU_GET_IMAGE_SN)
 
     def cmd_get_device_config(self, timeout: float | None = None) -> bytes:
         """F0 D8 00 00 05 00 00 00 00 0E -- extended device / PIN status check."""
