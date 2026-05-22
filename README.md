@@ -57,6 +57,7 @@ Commands:
 | `factory-reset` | Re-upload the canonical driver flow |
 
 Options:
+- `--section N` (write / refresh) — image slot index (default 0; badge has 3 slots: 0..2)
 - `--bw` (write / badge) — force 2-colour palette (black + white only)
 - `--reader N` — PC/SC reader index (default: 0; PICC interface auto-preferred)
 - `-v` — verbose APDU logging
