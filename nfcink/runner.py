@@ -53,30 +53,31 @@ _MAX_6986_RETRIES = 5
 
 def _send_refresh(device: NfcInkDevice, state: _State,
                   retried_once: bool, use_alt: bool,
-                  retries_6986: int) -> bool:
+                  retries_6986: int, section: int = 0) -> bool:
     """Refresh state machine (escalating: F0D4050000 → F0D4050000 → F0D4850000).
 
     retried_once -- True once we have sent the initial APDU and received 68C6.
     use_alt      -- True once we have escalated to F0D4850000 (P1=0x85).
+    section      -- image-slot index to display (0..2); becomes P2 of the F0D4.
 
     Returns True  -- operation finished; state['result'] is set.
     Returns False -- tag dropped; caller should reconnect and retry.
     """
     if use_alt:
-        apdu_hex = APDU_REFRESH_ALT
         timeout  = 50.0
+        apdu_hex = f"F0D485{section & 0x7F:02X}00"
     else:
-        apdu_hex = APDU_REFRESH_INIT
         timeout  = 10.0
+        apdu_hex = f"F0D405{section & 0x7F:02X}00"
 
     vlog(f"  refresh TX: {apdu_hex}  (retried_once={retried_once} use_alt={use_alt})")
     print(f"    Sending {apdu_hex} ...", flush=True)
 
     try:
         if use_alt:
-            resp = device.cmd_refresh_alt(timeout=timeout)
+            resp = device.cmd_refresh_alt(section=section, timeout=timeout)
         else:
-            resp = device.cmd_refresh_init(timeout=timeout)
+            resp = device.cmd_refresh_init(section=section, timeout=timeout)
     except TagDropError:
         # Tag dropped during refresh.
         # TagLostException at F0D4850000 triggers reconnect + re-write + retry.
@@ -90,7 +91,7 @@ def _send_refresh(device: NfcInkDevice, state: _State,
             print(f"    [!] Tag dropped during refresh {attempts} times -- giving up.")
             state['result'] = False
             return True   # done, failed
-        apdu_label = "F0D4850000" if use_alt else "F0D4050000"
+        apdu_label = apdu_hex
         print(f"    Tag dropped during {apdu_label} (attempt {attempts}/3).")
         print("    Keep badge on reader -- reconnecting, re-writing, and retrying...")
         return False  # signal backends to reconnect and rerun run_on_tag
@@ -109,7 +110,8 @@ def _send_refresh(device: NfcInkDevice, state: _State,
             vlog(f"  SW=6986: retry from start ({_MAX_6986_RETRIES - retries_6986 + 1}/{_MAX_6986_RETRIES})")
             return _send_refresh(device, state,
                                  retried_once=False, use_alt=False,
-                                 retries_6986=retries_6986 - 1)
+                                 retries_6986=retries_6986 - 1,
+                                 section=section)
         print(f"    [!] Device rejected refresh after {_MAX_6986_RETRIES} retries (SW=6986)")
         state['result'] = False
         return True
@@ -121,11 +123,13 @@ def _send_refresh(device: NfcInkDevice, state: _State,
             time.sleep(0.25)
             return _send_refresh(device, state,
                                  retried_once=True, use_alt=False,
-                                 retries_6986=retries_6986)
+                                 retries_6986=retries_6986,
+                                 section=section)
         if not use_alt:
             return _send_refresh(device, state,
                                  retried_once=True, use_alt=True,
-                                 retries_6986=retries_6986)
+                                 retries_6986=retries_6986,
+                                 section=section)
         print("    [!] Refresh rejected after F0D4850000 (SW=68C6)")
         state['result'] = False
         return True
@@ -139,14 +143,17 @@ def _send_refresh(device: NfcInkDevice, state: _State,
 
     # 9000 / 009000 -- poll once for final status.
     if sw == SW_OK:
-        return _poll_once(device, state, retries_6986)
+        return _poll_once(device, state, retries_6986, section)
 
-    # 68CA -- device busy. Retransmit the same APDU once more (P2 stays 0)
+    # 68CA -- device busy. Retransmit the same APDU once more (same P2)
     # and accept bare 9000 as success.
     if sw == SW_68CA:
         vlog("  SW=68CA: device busy, retrying once")
         try:
-            resp2 = device.cmd_refresh_alt(timeout=50.0) if use_alt else device.cmd_refresh_init(timeout=10.0)
+            if use_alt:
+                resp2 = device.cmd_refresh_alt(section=section, timeout=50.0)
+            else:
+                resp2 = device.cmd_refresh_init(section=section, timeout=10.0)
         except TagDropError:
             state['result'] = False
             return True
@@ -164,10 +171,12 @@ def _send_refresh(device: NfcInkDevice, state: _State,
     return True
 
 
-def _poll_once(device: NfcInkDevice, state: _State, retries_6986: int) -> bool:
+def _poll_once(device: NfcInkDevice, state: _State, retries_6986: int,
+               section: int = 0) -> bool:
     """Send one F0DE000001 poll and interpret the response.
 
-    Accepts 009000 or 019000 as success.
+    Accepts 009000 or 019000 as success. `section` is passed through so
+    that a 68C6 response (which restarts the refresh) targets the same slot.
     """
     vlog(f"  poll TX: {APDU_POLL_REFRESH}")
     try:
@@ -194,23 +203,28 @@ def _poll_once(device: NfcInkDevice, state: _State, retries_6986: int) -> bool:
         # 68C6 in the poll response -- escalate refresh from start.
         return _send_refresh(device, state,
                              retried_once=False, use_alt=False,
-                             retries_6986=retries_6986)
+                             retries_6986=retries_6986,
+                             section=section)
 
     print(f"    [!] Poll error  SW={hex_str(sw)}")
     state['result'] = False
     return True
 
 
-def start_refresh(device: NfcInkDevice, state: _State) -> bool:
+def start_refresh(device: NfcInkDevice, state: _State,
+                  section: int = 0) -> bool:
     """Drive the full refresh sequence.
+
+    section -- image-slot index to display (0..pictureCapacity-1).
 
     Returns True  -- complete; state['result'] is set.
     Returns False -- tag dropped; caller should reconnect and retry.
     """
-    print("[*] Refreshing screen...")
+    print(f"[*] Refreshing screen (slot {section})...")
     return _send_refresh(device, state,
                          retried_once=False, use_alt=False,
-                         retries_6986=_MAX_6986_RETRIES)
+                         retries_6986=_MAX_6986_RETRIES,
+                         section=section)
 
 
 # ---- Tag callback -----------------------------------------------------------
@@ -237,14 +251,20 @@ def run_on_tag(transport, args, state: _State) -> bool:
         return True
 
     if args.command == "write":
-        cfg        = device.read_config()
+        cfg = device.read_config()
+        if not 0 <= args.section < cfg.picture_capacity:
+            print(f"[!] --section {args.section} out of range "
+                  f"(badge has {cfg.picture_capacity} slots, "
+                  f"valid: 0..{cfg.picture_capacity - 1})")
+            state['result'] = False
+            return True
         force_bw   = getattr(args, 'bw', False)
         image_data = image_to_device_bytes(args.image, cfg, force_bw=force_bw)
         vlog(f"  image: {len(image_data)} bytes  (force_bw={force_bw})")
         if not device.write_image_d3(image_data, section=args.section):
             state['result'] = False
             return True
-        return start_refresh(device, state)
+        return start_refresh(device, state, section=args.section)
 
     if args.command == "badge":
         cfg      = device.read_config()
@@ -264,8 +284,14 @@ def run_on_tag(transport, args, state: _State) -> bool:
         return start_refresh(device, state)
 
     if args.command == "refresh":
-        device.read_config()
-        return start_refresh(device, state)
+        cfg = device.read_config()
+        if not 0 <= args.section < cfg.picture_capacity:
+            print(f"[!] --section {args.section} out of range "
+                  f"(badge has {cfg.picture_capacity} slots, "
+                  f"valid: 0..{cfg.picture_capacity - 1})")
+            state['result'] = False
+            return True
+        return start_refresh(device, state, section=args.section)
 
     if args.command == "factory-reset":
         # Re-upload the canonical driver flow. Do NOT call read_config() first

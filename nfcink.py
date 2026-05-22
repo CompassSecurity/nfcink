@@ -112,7 +112,9 @@ def main() -> None:
     p_badge.add_argument("--bw", action="store_true",
                          help="Force black+white only (2-colour waveform)")
 
-    sub.add_parser("refresh", help="Trigger a screen refresh")
+    p_refresh = sub.add_parser("refresh", help="Trigger a screen refresh")
+    p_refresh.add_argument("--section", type=int, default=0,
+                           help="Image slot index to display (default 0)")
     sub.add_parser("clear",   help="Write a blank white screen")
     sub.add_parser("factory-reset",
                    help="Re-upload the canonical driver flow (recovers a badge whose screen no longer refreshes)")

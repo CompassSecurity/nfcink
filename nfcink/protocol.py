@@ -97,23 +97,27 @@ class NfcInkDevice:
 
     # ---- Screen refresh -----------------------------------------------------
 
-    def cmd_refresh_init(self, timeout: float = 10.0) -> bytes:
-        """F0 D4 05 00 00 -- initial refresh (P1=0x05).
+    def cmd_refresh_init(self, section: int = 0, timeout: float = 10.0) -> bytes:
+        """F0 D4 05 <section> 00 -- initial refresh.
 
-        Initial refresh (first step, no escalation). Expected
-        responses: 9000 / 009000 / 019000 (success), 68C6 (escalate), 6986
-        (retry up to 5x).
+        P1=0x05 (wait mode, no screen-detect bypass).
+        P2 bits 6-0 = image-slot index to display (0..pictureCapacity-1).
+        Expected responses: 9000 / 009000 / 019000 (success), 68C6
+        (escalate), 6986 (retry up to 5x).
         """
-        return self._tx(APDU_REFRESH_INIT, timeout=timeout)
+        apdu = bytes([0xF0, 0xD4, 0x05, section & 0x7F, 0x00])
+        return self._txb(apdu, timeout=timeout)
 
-    def cmd_refresh_alt(self, timeout: float = 50.0) -> bytes:
-        """F0 D4 85 00 00 -- alternate refresh (P1=0x85).
+    def cmd_refresh_alt(self, section: int = 0, timeout: float = 50.0) -> bytes:
+        """F0 D4 85 <section> 00 -- alternate refresh (P1=0x85, no detect).
 
         Sent after two 68C6 responses. BLOCKS ~14-15 s while the e-ink
         waveform is computed, then returns 9000. The long timeout here is
-        required: short timeouts will drop the session.
+        required: short timeouts will drop the session. P2 bits 6-0 =
+        image-slot index to display.
         """
-        return self._tx(APDU_REFRESH_ALT, timeout=timeout)
+        apdu = bytes([0xF0, 0xD4, 0x85, section & 0x7F, 0x00])
+        return self._txb(apdu, timeout=timeout)
 
     def cmd_poll_refresh(self, timeout: float = 50.0) -> bytes:
         """F0 DE 00 00 01 -- poll refresh status.
