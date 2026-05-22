@@ -85,6 +85,28 @@ class NfcInkDevice:
         """
         return self._tx(APDU_GET_IMAGE_SN)
 
+    def cmd_read_user_data(self, offset: int, length: int) -> bytes:
+        """F0 D8 00 00 05 <offset BE 4B> <length 1B> -- read user data area.
+
+        Reads `length` bytes (1..255 per APDU) starting at byte `offset`
+        from the FMSC chip's 20 KB user data area. Per FMSC ESL manual
+        section 7.14. The chip stores the literal ASCII "4_color Screen"
+        at offset 0 by default (this is what `cmd_get_device_config` reads
+        for the 4-color marker check).
+
+        Caller must chunk reads longer than 255 bytes themselves.
+        """
+        if not 0 <= offset <= 0xFFFFFFFF:
+            raise ValueError(f"offset out of 32-bit range: {offset}")
+        if not 1 <= length <= 255:
+            raise ValueError(f"length must be 1..255 per APDU, got {length}")
+        apdu = (
+            bytes([0xF0, 0xD8, 0x00, 0x00, 0x05])
+            + offset.to_bytes(4, "big")
+            + bytes([length])
+        )
+        return self._txb(apdu)
+
     def cmd_get_device_config(self, timeout: float | None = None) -> bytes:
         """F0 D8 00 00 05 00 00 00 00 0E -- extended device / PIN status check."""
         return self._tx(APDU_DEVICE_CHECK, timeout=timeout)

@@ -262,6 +262,60 @@ def run_on_tag(transport, args, state: _State) -> bool:
             state["result"] = False
         return True
 
+    if args.command == "read-user-data":
+        if args.length < 1:
+            print(f"[!] --length must be >= 1, got {args.length}")
+            state['result'] = False
+            return True
+
+        # Bounds-check against the chip's actual user-data-area size
+        # (read from config B2 tag = size in KB).
+        cfg     = device.read_config()
+        max_len = cfg.user_data * 1024   # bytes
+        if args.offset >= max_len:
+            print(f"[!] --offset 0x{args.offset:X} is past the end of the "
+                  f"{cfg.user_data} KB user data area (max offset 0x{max_len - 1:X})")
+            state['result'] = False
+            return True
+        if args.offset + args.length > max_len:
+            allowed = max_len - args.offset
+            print(f"[!] --length {args.length} from offset 0x{args.offset:X} "
+                  f"would overflow the {cfg.user_data} KB user data area "
+                  f"(max {allowed} bytes from this offset)")
+            state['result'] = False
+            return True
+
+        # Chunk into <=255-byte APDUs; offset auto-advances.
+        collected = bytearray()
+        cur_offset = args.offset
+        remaining  = args.length
+        partial_failure = None
+        while remaining > 0:
+            chunk_len = min(remaining, 255)
+            resp = device.cmd_read_user_data(cur_offset, chunk_len)
+            sw   = resp[-2:] if len(resp) >= 2 else b""
+            if sw != SW_OK:
+                partial_failure = (cur_offset, sw)
+                break
+            collected.extend(resp[:-2])
+            cur_offset += chunk_len
+            remaining  -= chunk_len
+
+        if collected:
+            print(f"[+] Read {len(collected)} bytes from offset 0x{args.offset:08X}:")
+            for i in range(0, len(collected), 16):
+                row        = collected[i:i+16]
+                hex_part   = " ".join(f"{b:02X}" for b in row)
+                ascii_part = "".join(chr(b) if 32 <= b < 127 else "." for b in row)
+                print(f"    0x{args.offset + i:08X}  {hex_part:<47s}  |{ascii_part}|")
+        if partial_failure:
+            fail_off, fail_sw = partial_failure
+            print(f"[!] Stopped at offset 0x{fail_off:08X}  SW={hex_str(fail_sw)}")
+            state['result'] = False
+        else:
+            state['result'] = True
+        return True
+
     if args.command == "write":
         cfg = device.read_config()
         if not 0 <= args.section < cfg.picture_capacity:

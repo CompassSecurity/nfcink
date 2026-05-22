@@ -96,6 +96,11 @@ def main() -> None:
 
     sub.add_parser("read", help="Read and display device configuration")
     sub.add_parser("current-slot", help="Print the index of the image slot currently shown on the screen")
+    p_rud = sub.add_parser("read-user-data", help="Read N bytes from the FMSC chip's user data area (20 KB region)")
+    p_rud.add_argument("--offset", type=lambda s: int(s, 0), default=0,
+                       help="Byte offset within the user data area (default 0; accepts 0x... hex or decimal)")
+    p_rud.add_argument("--length", type=lambda s: int(s, 0), default=16,
+                       help="Number of bytes to read (default 16; chunked into 255-byte APDUs)")
 
     p_write = sub.add_parser("write", help="Write an image to the display")
     p_write.add_argument("image", help="Path to image file (PNG/JPEG/...)")
