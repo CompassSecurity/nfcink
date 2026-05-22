@@ -104,6 +104,25 @@ class NfcInkDevice:
                       block_idx & 0xFF, sub_idx & 0xFF]) + data
         return self._txb(apdu)
 
+    def cmd_load_image_raw(self, section: int, seq: int, data: bytes) -> bytes:
+        """F0 D2 <section> <seq> <Lc> <data...> -- write raw image bytes.
+
+        Uncompressed counterpart of `cmd_write_d3_subchunk`. Each APDU
+        carries one 250-byte chunk (last chunk can be shorter).
+
+        section: image slot index (0..pictureCapacity-1)
+        seq:     packet sequence number (0..255)
+        data:    1..250 bytes of raw image data
+        """
+        if not 0 <= section <= 0x7F:
+            raise ValueError(f"section out of range: {section}")
+        if not 0 <= seq <= 0xFF:
+            raise ValueError(f"seq out of range: {seq}")
+        if not 1 <= len(data) <= 250:
+            raise ValueError(f"data length must be 1..250, got {len(data)}")
+        apdu = bytes([0xF0, 0xD2, section, seq, len(data)]) + bytes(data)
+        return self._txb(apdu)
+
     # ---- Screen refresh -----------------------------------------------------
 
     def cmd_refresh_init(self, section: int = 0, timeout: float = 10.0) -> bytes:
@@ -236,12 +255,51 @@ class NfcInkDevice:
         return (len(data) >= 1 and data[0] == 0x01,
                 len(data) >= 2 and data[1] == 0x01)
 
+    def write_image_d2(self, image_data: bytes, section: int = 0) -> bool:
+        """Write image_data using D2 (raw, uncompressed) APDUs.
+
+        Each APDU carries up to 250 bytes; last packet can be shorter.
+        Counterpart of `write_image_d3` -- same image bytes, no LZO
+        compression.
+        """
+        total = len(image_data)
+        if total == 0:
+            raise ValueError("Empty image data")
+
+        n_full    = total // _SUB_CHUNK_SIZE
+        remainder = total %  _SUB_CHUNK_SIZE
+        n_chunks  = n_full + (1 if remainder else 0)
+        print("[*] Writing image (D2 / raw)...")
+        vlog(f"  {total} bytes -> {n_chunks} raw chunks of {_SUB_CHUNK_SIZE} (section={section})")
+
+        seq = 0
+        for i in range(n_full):
+            chunk = image_data[i * _SUB_CHUNK_SIZE : (i + 1) * _SUB_CHUNK_SIZE]
+            resp  = self.cmd_load_image_raw(section, seq, chunk)
+            if not check_sw(resp):
+                print(f"    [!] D2 chunk {seq} failed  SW={hex_str(resp[-2:])}")
+                return False
+            seq += 1
+            self._print_progress(seq, n_chunks, final=False)
+
+        if remainder:
+            chunk = image_data[n_full * _SUB_CHUNK_SIZE :]
+            resp  = self.cmd_load_image_raw(section, seq, chunk)
+            if not check_sw(resp):
+                print(f"    [!] D2 last chunk failed  SW={hex_str(resp[-2:])}")
+                return False
+            seq += 1
+
+        self._print_progress(n_chunks, n_chunks, final=True)
+        print("[+] Write complete.")
+        return True
+
     def write_image_d3(self, image_data: bytes, section: int = 0) -> bool:
         """Write image_data using D3 (LZO1x-1 compressed) APDUs.
 
-        The device firmware requires LZO-compressed writes; raw F0 D2 writes
-        cause the device to crash on the first refresh APDU. Image data is split into 2000-byte blocks, each
-        compressed and sent as <=250-byte sub-chunks.
+        Image data is split into 2000-byte blocks, each compressed and
+        sent as <=250-byte sub-chunks. Counterpart of `write_image_d2`;
+        use this when you want the upload to be smaller over NFC.
         """
         total = len(image_data)
         if total == 0:

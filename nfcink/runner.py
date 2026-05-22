@@ -272,8 +272,12 @@ def run_on_tag(transport, args, state: _State) -> bool:
             return True
         force_bw   = getattr(args, 'bw', False)
         image_data = image_to_device_bytes(args.image, cfg, force_bw=force_bw)
-        vlog(f"  image: {len(image_data)} bytes  (force_bw={force_bw})")
-        if not device.write_image_d3(image_data, section=args.section):
+        vlog(f"  image: {len(image_data)} bytes  (force_bw={force_bw}, compression={args.compression})")
+        if args.compression == "none":
+            ok = device.write_image_d2(image_data, section=args.section)
+        else:
+            ok = device.write_image_d3(image_data, section=args.section)
+        if not ok:
             state['result'] = False
             return True
         return start_refresh(device, state, section=args.section)

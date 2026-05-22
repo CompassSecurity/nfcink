@@ -91,7 +91,8 @@ def main() -> None:
     # Shared defaults — every subcommand receives all keys so run_on_tag
     # can access them without hasattr guards.
     parser.set_defaults(image=None, section=0, photo=None, name=None,
-                        company=None, logo=None, barcode=None, bw=False)
+                        company=None, logo=None, barcode=None, bw=False,
+                        compression="lzo")
 
     sub.add_parser("read", help="Read and display device configuration")
     sub.add_parser("current-slot", help="Print the index of the image slot currently shown on the screen")
@@ -102,6 +103,9 @@ def main() -> None:
                          help="Image slot index (default 0)")
     p_write.add_argument("--bw", action="store_true",
                          help="Force black+white only (2-colour waveform)")
+    p_write.add_argument("--compression", choices=["lzo", "none"], default="lzo",
+                         help="Upload mode: 'lzo' (F0D3, default; LZO-compressed chunks) "
+                              "or 'none' (F0D2, raw)")
 
     p_badge = sub.add_parser("badge", help="Compose and write a badge")
     p_badge.add_argument("photo", help="Path to portrait photo")

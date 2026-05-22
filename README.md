@@ -60,6 +60,7 @@ Commands:
 Options:
 - `--section N` (write / refresh) — image slot index (default 0; badge has 3 slots: 0..2)
 - `--bw` (write / badge) — force 2-colour palette (black + white only)
+- `--compression {lzo,none}` (write) — upload mode: LZO-compressed F0D3 (default) or raw F0D2
 - `--reader N` — PC/SC reader index (default: 0; PICC interface auto-preferred)
 - `-v` — verbose APDU logging
 
@@ -119,10 +120,6 @@ write to the badge directly from a phone:
 
 ## Protocol notes
 
-- **Image data is LZO-compressed.** The device firmware expects `F0 D3`
-  writes with LZO1x-1 compressed 2000-byte blocks split into ≤250-byte
-  sub-chunks. Raw `F0 D2` writes cause the device to crash on the first
-  refresh APDU.
 - **Refresh sequence.** Send `F0D4050000`; on `68C6` resend once; on a
   second `68C6` send `F0D4850000` (blocks ~14.5 s while the e-ink waveform
   is computed); then poll once with `F0DE000001`. Any of `9000`, `009000`
