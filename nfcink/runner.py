@@ -267,6 +267,13 @@ def run_on_tag(transport, args, state: _State) -> bool:
         device.read_config()
         return start_refresh(device, state)
 
+    if args.command == "factory-reset":
+        # Re-upload the canonical driver flow. Do NOT call read_config() first
+        # -- this command must work even when D1 returns 6451 (no driver flow
+        # loaded, the post-F0DB02 state).
+        state['result'] = device.factory_reset()
+        return True
+
     if args.command == "clear":
         from PIL import Image
         cfg        = device.read_config()

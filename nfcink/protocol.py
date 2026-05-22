@@ -10,9 +10,10 @@ loop logic.
 import minilzo
 
 from .constants import (
-    SW_OK,
+    SW_OK, SW_6986,
     APDU_READ_CONFIG, APDU_READ_IMAGE_INFO, APDU_DEVICE_CHECK,
     APDU_REFRESH_INIT, APDU_REFRESH_ALT, APDU_POLL_REFRESH,
+    APDU_DRIVER_CLEAR, APDU_DRIVER_FLOW_FACTORY, APDU_SET_SCREEN_FACTORY,
     vlog, hex_str,
 )
 from .config import DeviceCfg
@@ -122,6 +123,29 @@ class NfcInkDevice:
         """
         return self._tx(APDU_POLL_REFRESH, timeout=timeout)
 
+    # ---- Driver-flow management ---------------------------------------------
+    #
+    # The chip stores a "driver flow" (panel init TLV) in EEPROM. These three
+    # APDUs are the primitives that load it. Used internally by factory_reset;
+    # exposed as cmd_* methods for diagnostics but no CLI subcommand.
+
+    def cmd_clear_driver_flow(self) -> bytes:
+        """F0 DB 02 00 00 -- wipe any currently loaded screen driver flow.
+
+        Returns 9000 when something was cleared, 6986 when nothing was loaded.
+        After this APDU, the screen cannot refresh until a new driver flow is
+        loaded via cmd_load_driver_flow.
+        """
+        return self._tx(APDU_DRIVER_CLEAR)
+
+    def cmd_load_driver_flow(self, apdu_hex: str) -> bytes:
+        """F0 DB 00 00 <Lc> <TLV blob> -- load a screen driver flow."""
+        return self._tx(apdu_hex)
+
+    def cmd_set_screen_type(self, apdu_hex: str) -> bytes:
+        """F0 DA 00 00 <Lc> <screen-type bytes> -- switch to loaded driver."""
+        return self._tx(apdu_hex)
+
     # ---- Higher-level helpers -----------------------------------------------
 
     def read_config(self) -> DeviceCfg:
@@ -148,6 +172,47 @@ class NfcInkDevice:
         cfg = DeviceCfg.from_responses(resp_tlv, resp_pin)
         vlog(f"  got : {cfg}")
         return cfg
+
+    def factory_reset(self) -> bool:
+        """Re-upload the original driver flow.
+
+        Use this when a badge's screen no longer refreshes despite the chip
+        still answering NFC normally -- typically the result of an interrupted
+        F0DB02 / F0DB00 sequence that left the chip without a driver flow,
+        or a wrong driver flow having been loaded by another tool.
+
+        Sends three APDUs in order:
+          1. F0DB020000                clear the current driver flow
+          2. F0DB0000<Lc><factory TLV> load the canonical OTP-reference flow
+          3. F0DA000003F00720          switch the chip's screen type to it
+
+        Returns True if all three APDUs returned 9000 (or 6986 from step 1,
+        meaning no driver flow was loaded -- also acceptable, the load step
+        will install one).
+        """
+        print("[*] Factory-resetting driver flow (datasheet OTP reference)...")
+
+        resp = self.cmd_clear_driver_flow()
+        sw = resp[-2:] if len(resp) >= 2 else b""
+        if sw not in (b"\x90\x00", b"\x69\x86"):
+            print(f"    [!] Clear failed  SW={hex_str(sw)}")
+            return False
+        vlog(f"    Clear: SW={hex_str(sw)}")
+
+        resp = self.cmd_load_driver_flow(APDU_DRIVER_FLOW_FACTORY)
+        if not check_sw(resp):
+            print(f"    [!] Load driver flow failed  SW={hex_str(resp[-2:])}")
+            return False
+        vlog(f"    Load:  SW={hex_str(resp[-2:])}")
+
+        resp = self.cmd_set_screen_type(APDU_SET_SCREEN_FACTORY)
+        if not check_sw(resp):
+            print(f"    [!] Set screen type failed  SW={hex_str(resp[-2:])}")
+            return False
+        vlog(f"    Type:  SW={hex_str(resp[-2:])}")
+
+        print("[+] Factory reset complete. Try `write <image>` to verify.")
+        return True
 
     def read_image_info(self) -> tuple[bool, bool]:
         """Read 2-byte image flip flags. Returns (flip_h, flip_v)."""

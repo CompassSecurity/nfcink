@@ -114,6 +114,8 @@ def main() -> None:
 
     sub.add_parser("refresh", help="Trigger a screen refresh")
     sub.add_parser("clear",   help="Write a blank white screen")
+    sub.add_parser("factory-reset",
+                   help="Re-upload the canonical driver flow (recovers a badge whose screen no longer refreshes)")
 
     args = parser.parse_args()
 
