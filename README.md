@@ -96,7 +96,7 @@ then unplug and re-plug the reader.
 #### Linux
 
 ```bash
-sudo apt install pcscd libpcsclite-dev swig
+sudo apt install pcscd pcsc-tools libccid libpcsclite-dev swig
 sudo systemctl enable --now pcscd
 ```
 
