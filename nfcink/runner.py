@@ -227,6 +227,52 @@ def start_refresh(device: NfcInkDevice, state: _State,
                          section=section)
 
 
+def _write_user_data_chunked(device: NfcInkDevice, offset: int, data: bytes,
+                             force: bool = False) -> bool:
+    """Chunk `data` into <=250-byte write-user-data APDUs starting at `offset`.
+
+    Shared by the `write-user-data` command and the optional post-refresh
+    user-data hook on `write` (see run_on_tag). Returns True on success.
+    """
+    cfg     = device.read_config()
+    max_len = cfg.user_data * 1024
+    if offset + len(data) > max_len:
+        allowed = max_len - offset
+        print(f"[!] Writing {len(data)} bytes from offset 0x{offset:X} "
+              f"would overflow the {cfg.user_data} KB user data area "
+              f"(max {allowed} bytes from this offset)")
+        return False
+
+    if offset < 14 and not force:
+        print(f"[!] Refusing to write to offset 0x{offset:X}: the first "
+              f"14 bytes hold the '4_color Screen' marker that the config "
+              f"parser relies on. Pick offset >= 14 (0x0E), or pass force=True "
+              f"to override.")
+        return False
+    if offset < 14 and force:
+        print(f"[!] force: overwriting the '4_color Screen' marker region "
+              f"(offset 0x{offset:X}..0x{offset + len(data) - 1:X}). "
+              f"Subsequent `read` will probably fail to detect 4-color mode.")
+
+    cur_offset = offset
+    remaining  = len(data)
+    written    = 0
+    while remaining > 0:
+        chunk_len = min(remaining, 250)
+        chunk     = data[written:written + chunk_len]
+        resp = device.cmd_write_user_data(cur_offset, chunk)
+        sw   = resp[-2:] if len(resp) >= 2 else b""
+        if sw != SW_OK:
+            print(f"[!] Write failed at offset 0x{cur_offset:08X}  SW={hex_str(sw)}")
+            print(f"    {written} bytes written before failure.")
+            return False
+        cur_offset += chunk_len
+        written    += chunk_len
+        remaining  -= chunk_len
+    print(f"[+] Wrote {written} bytes to offset 0x{offset:08X}.")
+    return True
+
+
 # ---- Tag callback -----------------------------------------------------------
 
 def run_on_tag(transport, args, state: _State) -> bool:
@@ -328,47 +374,8 @@ def run_on_tag(transport, args, state: _State) -> bool:
             state['result'] = False
             return True
 
-        cfg     = device.read_config()
-        max_len = cfg.user_data * 1024
-        if args.offset + len(data_bytes) > max_len:
-            allowed = max_len - args.offset
-            print(f"[!] Writing {len(data_bytes)} bytes from offset 0x{args.offset:X} "
-                  f"would overflow the {cfg.user_data} KB user data area "
-                  f"(max {allowed} bytes from this offset)")
-            state['result'] = False
-            return True
-
-        if args.offset < 14 and not args.force:
-            print(f"[!] Refusing to write to offset 0x{args.offset:X}: the first "
-                  f"14 bytes hold the '4_color Screen' marker that the config "
-                  f"parser relies on. Pick offset >= 14 (0x0E), or pass --force "
-                  f"to override.")
-            state['result'] = False
-            return True
-        if args.offset < 14 and args.force:
-            print(f"[!] --force: overwriting the '4_color Screen' marker region "
-                  f"(offset 0x{args.offset:X}..0x{args.offset + len(data_bytes) - 1:X}). "
-                  f"Subsequent `read` will probably fail to detect 4-color mode.")
-
-        # Chunk into <=250-byte APDUs.
-        cur_offset = args.offset
-        remaining  = len(data_bytes)
-        written    = 0
-        while remaining > 0:
-            chunk_len = min(remaining, 250)
-            chunk     = data_bytes[written:written + chunk_len]
-            resp = device.cmd_write_user_data(cur_offset, chunk)
-            sw   = resp[-2:] if len(resp) >= 2 else b""
-            if sw != SW_OK:
-                print(f"[!] Write failed at offset 0x{cur_offset:08X}  SW={hex_str(sw)}")
-                print(f"    {written} bytes written before failure.")
-                state['result'] = False
-                return True
-            cur_offset += chunk_len
-            written    += chunk_len
-            remaining  -= chunk_len
-        print(f"[+] Wrote {written} bytes to offset 0x{args.offset:08X}.")
-        state['result'] = True
+        state['result'] = _write_user_data_chunked(device, args.offset, data_bytes,
+                                                    force=args.force)
         return True
 
     if args.command == "write":
@@ -389,7 +396,40 @@ def run_on_tag(transport, args, state: _State) -> bool:
         if not ok:
             state['result'] = False
             return True
-        return start_refresh(device, state, section=args.section)
+
+        # Optional: silently preload other slots' image memory in the same
+        # session. write_image_d2/d3 only uploads pixel data -- it does NOT
+        # trigger a refresh, so this adds upload time but none of the ~15-50s
+        # waveform wait that a real refresh costs. Best-effort: a failure here
+        # doesn't fail the primary write, it just means that slot keeps
+        # whatever it had before.
+        extra_images = getattr(args, 'extra_images', None) or []
+        for section, path in extra_images:
+            if not 0 <= section < cfg.picture_capacity or section == args.section:
+                continue
+            try:
+                extra_data = image_to_device_bytes(path, cfg, force_bw=force_bw)
+                if args.compression == "none":
+                    device.write_image_d2(extra_data, section=section)
+                else:
+                    device.write_image_d3(extra_data, section=section)
+            except Exception as exc:
+                vlog(f"  [!] extra image write to section {section} failed: {exc}")
+
+        done = start_refresh(device, state, section=args.section)
+        if not done:
+            # Session dropped mid-refresh; backend reconnects and reruns this
+            # whole branch (image rewrite included), so the user-data write
+            # below only fires once the refresh has actually succeeded.
+            return False
+
+        user_data = getattr(args, 'user_data', None)
+        user_data_offset = getattr(args, 'user_data_offset', None)
+        if state.get('result') and user_data and user_data_offset is not None:
+            state['result'] = _write_user_data_chunked(device, user_data_offset,
+                                                        user_data,
+                                                        force=getattr(args, 'user_data_force', False))
+        return True
 
     if args.command == "badge":
         cfg      = device.read_config()
